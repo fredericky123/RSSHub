@@ -17,7 +17,7 @@ export const route: Route = {
             target: '/:path',
         },
     ],
-    maintainers: ['nczitzk'],
+    maintainers: ['nczitzk', 'fredericky123'],
     handler,
     description: `::: tip
 
@@ -41,16 +41,38 @@ async function handler(ctx) {
 
     const $ = load(response.data);
 
-    let items = $('.p2j_list_con .clearfix li a')
-        .slice(0, ctx.req.query('limit') ? Number.parseInt(ctx.req.query('limit')) : 40)
+    const limit = ctx.req.query('limit') ? Number.parseInt(ctx.req.query('limit')) : 40;
+
+    // Article links follow the people.cn pattern, e.g.
+    // /n1/2026/0603/c431027-40733372.html — match on that instead of the
+    // (redesign-fragile) list container class. Works for both the aggregated
+    // 通知公告 portal page and individual sub-column pages.
+    const seen = new Set();
+    let items = $('a[href]')
         .toArray()
         .map((item) => {
-            item = $(item);
+            const $item = $(item);
+            const href = $item.attr('href') ?? '';
+            const link = href.startsWith('http') ? href : `${rootUrl}${href.startsWith('/') ? '' : '/'}${href}`;
+            return { $item, href, link };
+        })
+        .filter(({ href }) => /\/n1\/\d{4}\/\d{4}\/c\d+-\d+\.html$/.test(href))
+        .filter(({ link }) => {
+            if (seen.has(link)) {
+                return false;
+            }
+            seen.add(link);
+            return true;
+        })
+        .slice(0, limit)
+        .map(({ $item, link }) => {
+            const block = $item.closest('li');
+            const dateMatch = (block.length ? block : $item.parent()).text().match(/\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?/);
 
             return {
-                title: item.text(),
-                link: `${rootUrl}${item.attr('href')}`,
-                pubDate: timezone(parseDate(item.next().text(), '[YYYY-MM-DD HH:mm]'), 8),
+                title: $item.text().trim(),
+                link,
+                pubDate: dateMatch ? timezone(parseDate(dateMatch[0]), 8) : undefined,
             };
         });
 
@@ -64,7 +86,7 @@ async function handler(ctx) {
 
                 const content = load(detailResponse.data);
 
-                item.description = content('.text_con').html();
+                item.description = content('.text_con').html() || content('.show_text').html() || content('#detail_content').html() || item.title;
 
                 return item;
             })
