@@ -49,12 +49,25 @@ async function handler(ctx) {
     const seen = new Set();
 
     $('a[href]').each((_, el) => {
-        const href = $(el).attr('href') || '';
-        // Article links are /<channel>/<32-hex>.html ; this skips index/nav/外链.
-        if (!/\/[0-9a-f]{20,}\.html$/i.test(href)) {
+        const raw = $(el).attr('href') || '';
+
+        // Resolve relative hrefs (the page uses relative links like
+        // "efe9...html") to absolute before matching, then filter on pathname.
+        let url;
+        try {
+            url = new URL(raw, listUrl);
+        } catch {
             return;
         }
-        const link = new URL(href, listUrl).href;
+        if (url.hostname !== 'jsgzb.bnu.edu.cn') {
+            return;
+        }
+        // Article pages are /<channel>/<32-hex>.html — this skips index/nav links.
+        if (!/[0-9a-f]{20,}\.html$/i.test(url.pathname)) {
+            return;
+        }
+
+        const link = url.href;
         if (seen.has(link)) {
             return;
         }
