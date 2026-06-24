@@ -43,7 +43,14 @@ async function handler(ctx) {
     const listUrl = `${baseUrl}/${channel}/index.html`;
 
     // Single request: the list page is server-rendered.
-    const $ = load(await ofetch(listUrl));
+    const $ = load(
+        await ofetch(listUrl, {
+            headers: {
+                Referer: baseUrl,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            },
+        })
+    );
 
     const items = [];
     const seen = new Set();
