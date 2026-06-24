@@ -5,6 +5,12 @@ import timezone from '@/utils/timezone';
 
 const baseUrl = 'https://libone.bnu.edu.cn';
 
+// Site-wide "detail viewer" page id. Internal articles open at
+// /entry/v2/sub/<DETAIL_SUB>?typeId=<t>&dataId=<publicId>#/
+// (different from the list page's own sub id). If another column's detail page
+// uses a different sub id, change this constant.
+const DETAIL_SUB = 'e3cac60df9f07854af2dd485b0900866';
+
 export const route: Route = {
     name: 'Column',
     maintainers: ['fredericky123'],
@@ -42,9 +48,11 @@ async function handler(ctx) {
         const title = d['1']?.value;
         const date = d['6']?.value;
         const cover = d['0']?.value;
-        // External / WeChat / proxied items carry a real url; internal articles
-        // fall back to their data endpoint (a stable, unique URL).
-        const link = d.url ? new URL(d.url, baseUrl).href : `${baseUrl}${d.dataUrl}`;
+
+        // External / WeChat / proxied items carry their own url; internal
+        // articles open in the site's detail viewer keyed by publicId.
+        const link = d.url ? new URL(d.url, baseUrl).href : `${baseUrl}/entry/v2/sub/${DETAIL_SUB}?typeId=${t}&dataId=${d.publicId}#/`;
+
         const description = [cover ? `<img src="${cover}">` : '', title].filter(Boolean).join('<br>');
 
         return {
