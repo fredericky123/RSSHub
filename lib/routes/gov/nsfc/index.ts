@@ -35,7 +35,7 @@ export const route: Route = {
 | --- | --- |
 | 管理科学部 工作动态 | \`/nsfc/p1/2857/3202/glkxbgzdt.html\` |
 | 管理科学部 通知公告 | \`/nsfc/p1/2857/3203/glkxbtzgg.html\` |
-| 通知说明 | \`/nsfc/p1/3381/2822/tzsm1.html\` |`,
+| 业务资讯 | \`/nsfc/p1/3381/2822/tzsm1.html\` |`,
     handler,
 };
 
@@ -44,8 +44,15 @@ async function handler(ctx) {
     const currentUrl = `${baseUrl}/${path}`;
     const limit = ctx.req.query('limit') ? Number.parseInt(ctx.req.query('limit')) : 30;
 
-    // Single request: the column page is server-rendered.
-    const $ = load(await ofetch(currentUrl));
+    // Single request. Referer + UA help with the site's WAF on some pages.
+    const $ = load(
+        await ofetch(currentUrl, {
+            headers: {
+                Referer: baseUrl,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            },
+        })
+    );
 
     const seen = new Set();
     const items = [];
@@ -71,19 +78,27 @@ async function handler(ctx) {
             return;
         }
 
-        // Link text is "<title><YYYY-MM-DD>" with the date appended at the end.
+        // Two list templates exist: some put the date inside the link text
+        // ("<title><YYYY-MM-DD>"), others put it in a sibling element. Handle both.
         const text = $(el).text().replace(/\s+/g, ' ').trim();
-        const dateMatch = text.match(/(\d{4}-\d{2}-\d{2})$/);
-        const title = text.replace(/\s*\d{4}-\d{2}-\d{2}$/, '').trim();
+        const inText = text.match(/(\d{4}-\d{2}-\d{2})$/);
+        const title = inText ? text.replace(/\s*\d{4}-\d{2}-\d{2}$/, '').trim() : text;
         if (!title) {
             return;
         }
-        seen.add(link);
 
+        let dateStr = inText ? inText[1] : '';
+        if (!dateStr) {
+            const block = $(el).closest('li');
+            const m = (block.length ? block : $(el).parent()).text().match(/\d{4}-\d{2}-\d{2}/);
+            dateStr = m ? m[0] : '';
+        }
+
+        seen.add(link);
         items.push({
             title,
             link,
-            pubDate: dateMatch ? timezone(parseDate(dateMatch[1]), 8) : undefined,
+            pubDate: dateStr ? timezone(parseDate(dateStr), 8) : undefined,
         });
     });
 
