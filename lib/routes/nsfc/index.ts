@@ -8,9 +8,9 @@ import timezone from '@/utils/timezone';
 const baseUrl = 'https://www.nsfc.gov.cn';
 
 export const route: Route = {
-    path: '/nsfc/:path{.+}?',
-    name: '国家自然科学基金委员会',
-    example: '/gov/nsfc/p1/2857/3202/glkxbgzdt',
+    path: '/:path{.+}?',
+    name: '通用',
+    example: '/nsfc/p1/2857/3202/glkxbgzdt',
     parameters: { path: '页面路径，即 `nsfc.gov.cn/` 之后的部分，**结尾不用带 `.html`**，默认管理科学部「工作动态」' },
     categories: ['government'],
     features: {
@@ -24,7 +24,7 @@ export const route: Route = {
     radar: [
         {
             source: ['www.nsfc.gov.cn/*path'],
-            target: '/gov/nsfc/:path',
+            target: '/:path',
         },
     ],
     maintainers: ['fredericky123'],
@@ -33,9 +33,9 @@ export const route: Route = {
 
 | 栏目 | 路由 |
 | --- | --- |
-| 管理科学部 工作动态 | \`/gov/nsfc/p1/2857/3202/glkxbgzdt\` |
-| 管理科学部 通知公告 | \`/gov/nsfc/p1/2857/3203/glkxbtzgg\` |
-| 业务资讯 | \`/gov/nsfc/p1/3381/2822/tzsm1\` |`,
+| 管理科学部 工作动态 | \`/nsfc/p1/2857/3202/glkxbgzdt\` |
+| 管理科学部 通知公告 | \`/nsfc/p1/2857/3203/glkxbtzgg\` |
+| 业务资讯 | \`/nsfc/p1/3381/2822/tzsm1\` |`,
     handler,
 };
 
