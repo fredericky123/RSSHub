@@ -8,8 +8,8 @@ import timezone from '@/utils/timezone';
 const baseUrl = 'https://www.nsfc.gov.cn';
 
 export const route: Route = {
-    path: '/nsfc/:path{.+}?',
-    name: '国家自然科学基金委员会',
+    path: '/:path{.+}?',
+    name: '通用',
     example: '/gov/nsfc/p1/2857/3202/glkxbgzdt',
     parameters: { path: '页面路径，即 `nsfc.gov.cn/` 之后的部分，**结尾不用带 `.html`**，默认管理科学部「工作动态」' },
     categories: ['government'],
