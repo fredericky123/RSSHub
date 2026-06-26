@@ -48,14 +48,9 @@ async function handler(ctx) {
     const currentUrl = `${baseUrl}/${cleanPath}.html`;
     const limit = ctx.req.query('limit') ? Number.parseInt(ctx.req.query('limit')) : 30;
 
-    const $ = load(
-        await ofetch(currentUrl, {
-            headers: {
-                Referer: baseUrl,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            },
-        })
-    );
+    // No custom headers: NSFC's WAF appears to black-hole requests with a
+    // spoofed browser UA + self-referer, while the default request goes through.
+    const $ = load(await ofetch(currentUrl));
 
     const seen = new Set();
     const items = [];
