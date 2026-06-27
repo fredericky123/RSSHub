@@ -39,9 +39,15 @@ async function handler(ctx) {
     const name = ctx.req.param('name');
     const rssUrl = `https://rss.cnki.net/kns/rss.aspx?Journal=${name}&Virtual=knavi`;
 
-    const rssResponse = await got.get(rssUrl);
-
     try {
+        // rss.cnki.net 这个子域经常在 TCP 连接阶段就超时/不可达（尤其从境外出口）。
+        // 必须把请求放进 try 内并快速失败（短超时、不重试），否则异常会在进入下方
+        // 兜底逻辑之前抛出，导致整条路由直接 503，而不是退回 navi.cnki.net 抓取。
+        const rssResponse = await got.get(rssUrl, {
+            timeout: 8000,
+            retry: 0,
+        });
+
         const feed = await parser.parseString(rssResponse.data);
 
         if (feed.items && feed.items.length !== 0) {
@@ -69,6 +75,8 @@ async function handler(ctx) {
         logger.error(error);
     }
 
+    // —— 兜底：rss.cnki.net 不可用（超时、被挡、或返回空）时，改抓 navi.cnki.net ——
+    // 这一分支的 link 用稳定的 filename 拼接，天然没有 v= 令牌问题，guid 也稳定。
     const journalUrl = `${rootUrl}/knavi/journals/${name}/detail`;
     const titleRes = await got.get(journalUrl);
     const title = load(titleRes.data)('head > title').text();
