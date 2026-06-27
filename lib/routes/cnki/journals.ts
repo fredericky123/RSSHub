@@ -4,6 +4,7 @@ import type { Route } from '@/types';
 import cache from '@/utils/cache';
 import got from '@/utils/got';
 import logger from '@/utils/logger';
+import md5 from '@/utils/md5';
 import { parseDate } from '@/utils/parse-date';
 import parser from '@/utils/rss-parser';
 
@@ -50,6 +51,11 @@ async function handler(ctx) {
                 pubDate: parseDate(item.pubDate),
                 link: item.link,
                 author: item.author,
+                // rss.cnki.net 返回的文章链接带有每次请求都会重新生成的 v= 签名令牌。
+                // 若不显式设置 guid，RSSHub 会退回用 link 充当 guid，于是同一篇文章在
+                // 每次抓取时 guid 都不同，阅读器（如 Folo）会把它当成全新条目反复推送。
+                // 这里用「期刊名 + 标题 + 作者」生成稳定 guid 作为去重键。
+                guid: md5(`${name}-${item.title ?? ''}-${item.author ?? ''}`),
             }));
 
             return {
