@@ -9,19 +9,21 @@ const xmut = 'https://jwc.xmut.edu.cn';
 
 export const route: Route = {
     path: '/jwc/bkjw/:category?',
-    name: 'Unknown',
-    maintainers: [],
+    categories: ['university'],
+    example: '/xmut/jwc/bkjw/jxyx',
+    parameters: { category: '分类如下表' },
+    name: '本科生教务处',
+    maintainers: ['icecliffs'],
     handler,
+    description: `| 教学运行 | 综合事务 | 学务管理 | 实践教学 | 教研教改 |
+| :------: | :------: | :------: | :------: | :------: |
+|   jxyx   |   zhsw   |   xwgl   |   sjjx   |   jyjg   |`,
 };
 
 async function handler(ctx) {
     const { category = 'jwxt' } = ctx.req.param();
     const url = `${xmut}/index/tzgg/${category}.htm`;
-    const res = await got(url, {
-        headers: {
-            referer: xmut,
-        },
-    });
+    const res = await got(url);
     const $ = load(res.data);
     const itemsArray = $('#result_list table tbody tr')
         .toArray()
@@ -37,7 +39,7 @@ async function handler(ctx) {
                 link = resLink;
             }
             const title = $('a', res).attr('title');
-            const pubDate = parseDate(resDate.text().trim());
+            const pubDate = parseDate(resDate.text());
             return {
                 title,
                 link,

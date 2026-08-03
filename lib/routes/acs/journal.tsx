@@ -10,14 +10,23 @@ import playwright from '@/utils/playwright';
 
 export const route: Route = {
     path: '/journal/:id',
+    categories: ['journal'],
+    example: '/acs/journal/jacsat',
+    parameters: { id: 'Journal id, can be found in URL' },
+    features: {
+        supportScihub: true,
+    },
     radar: [
         {
             source: ['pubs.acs.org/journal/:id', 'pubs.acs.org/'],
         },
     ],
-    name: 'Unknown',
+    name: 'Journal',
     maintainers: ['nczitzk'],
     handler,
+    description: `::: tip
+See [Browse Content](https://pubs.acs.org)
+:::`,
 };
 
 async function handler(ctx) {
@@ -42,7 +51,7 @@ async function handler(ctx) {
             });
             await page.waitForSelector('.toc');
 
-            const html = await page.evaluate(() => document.documentElement.innerHTML);
+            const html = await page.evaluate(() => document.documentElement.getHTML());
             await page.close();
 
             const $ = load(html);

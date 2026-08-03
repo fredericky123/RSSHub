@@ -7,14 +7,21 @@ import playwright from '@/utils/playwright';
 
 export const route: Route = {
     path: '/publications/:id',
+    categories: ['study'],
+    example: '/researchgate/publications/Somsak-Panha',
+    parameters: { id: 'Username, can be found in URL' },
+    features: {
+        requirePuppeteer: true,
+        antiCrawler: true,
+    },
     radar: [
         {
             source: ['researchgate.net/profile/:username'],
             target: '/publications/:username',
         },
     ],
-    name: 'Unknown',
-    maintainers: [],
+    name: 'Publications',
+    maintainers: ['nczitzk'],
     handler,
 };
 
@@ -30,7 +37,7 @@ async function handler(ctx) {
         request.resourceType() === 'document' || request.resourceType() === 'script' ? route.continue() : route.abort();
     });
     await page.goto(currentUrl);
-    const response = await page.evaluate(() => document.documentElement.innerHTML);
+    const response = await page.evaluate(() => document.documentElement.getHTML());
     await page.close();
 
     const $ = load(response);
@@ -55,7 +62,7 @@ async function handler(ctx) {
                     request.resourceType() === 'document' || request.resourceType() === 'script' ? route.continue() : route.abort();
                 });
                 await page.goto(item.link);
-                const detailResponse = await page.evaluate(() => document.documentElement.innerHTML);
+                const detailResponse = await page.evaluate(() => document.documentElement.getHTML());
                 await page.close();
                 const content = load(detailResponse);
 

@@ -5,6 +5,8 @@ import got from '@/utils/got';
 
 export const route: Route = {
     path: '/839studio',
+    categories: ['traditional-media'],
+    example: '/thepaper/839studio',
     name: '澎湃美数课作品集',
     maintainers: ['umm233'],
     handler,
@@ -29,7 +31,7 @@ async function handler() {
         item: list.toArray().map((item) => {
             item = $(item);
             return {
-                title: item.find('.imgup a').first().text(),
+                title: item.find('.imgup a').text(),
                 description: `描述：${item.find('.imgdown p').text()}`,
                 link: item.find('.imgup a').attr('href'),
             };

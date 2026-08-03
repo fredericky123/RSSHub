@@ -8,7 +8,7 @@ import { parseDate } from '@/utils/parse-date';
 const ROW_COUNT = 100;
 
 const WEBSITE_URL = 'https://layoffs.fyi';
-const ENTRY_URL = 'https://airtable.com/embed/shrqYt5kSqMzHV9R5/tbl8c8kanuNB6bPYr';
+const ENTRY_URL = 'https://airtable.com/embed/app1PaujS9zxVGUZ4/shroKsHx3SdYYOzeh/tblleV7Pnb6AcPCYL';
 const AIRTABLE_HOST = 'https://airtable.com';
 
 /**
@@ -43,13 +43,15 @@ const getMappings = function (obj) {
 
 export const route: Route = {
     path: '/',
+    categories: ['other'],
+    example: '/layoffs',
     radar: [
         {
             source: ['layoffs.fyi/'],
             target: '',
         },
     ],
-    name: 'Unknown',
+    name: 'Layoff Data Tracker',
     maintainers: ['BrandNewLifeJackie26'],
     handler,
     url: 'layoffs.fyi/',

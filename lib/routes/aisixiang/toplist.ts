@@ -7,8 +7,11 @@ import { parseDate } from '@/utils/parse-date';
 import { ossUrl, ProcessFeed, rootUrl } from './utils';
 
 export const route: Route = {
-    path: ['/ranking/:id?/:period?', '/toplist/:id?/:period?'],
-    name: 'Unknown',
+    path: '/toplist/:id?/:period?',
+    categories: ['reading'],
+    example: '/aisixiang/toplist/1/7',
+    parameters: { id: '类型', period: '范围, 仅适用于点击排行榜, 可选一天(1)，一周(7)，一月(30)，所有(-1)，默认为一天' },
+    name: '排行',
     maintainers: ['HenryQW', 'nczitzk'],
     handler,
     description: `| 文章点击排行 | 最近更新文章 | 文章推荐排行 |
@@ -26,7 +29,7 @@ async function handler(ctx) {
 
     const $ = load(response);
 
-    const title = `${$('a.hl').text() || ''}${$('title').text().split('_', 1)[0]}`;
+    const title = `${$('a.hl').text()}${$('title').text().split('_', 1)[0]}`;
 
     const items = $('div.tops_list')
         .slice(0, limit)

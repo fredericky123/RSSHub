@@ -9,8 +9,14 @@ const rootUrl = 'http://news.hrbeu.edu.cn';
 
 export const route: Route = {
     path: '/gx/list/:column/:id?',
-    name: 'Unknown',
-    maintainers: [],
+    categories: ['university'],
+    example: '/hrbeu/gx/list/xw/yw',
+    parameters: {
+        column: '主栏，如 `新闻：xw`，由 `URL` 中获取；',
+        id: '次栏，如 `要闻：yw`，如果次栏存在，则为必选，由 `URL` 中获取。',
+    },
+    name: '工学新闻 - 列表页面',
+    maintainers: ['Derekmini', 'XYenon'],
     handler,
 };
 
@@ -19,11 +25,7 @@ async function handler(ctx) {
     const id = ctx.req.param('id') || '';
     const toUrl = id === '' ? `${rootUrl}/${column}.htm` : `${rootUrl}/${column}/${id}.htm`;
 
-    const response = await got(toUrl, {
-        headers: {
-            Referer: rootUrl,
-        },
-    });
+    const response = await got(toUrl);
 
     const $ = load(response.data);
 

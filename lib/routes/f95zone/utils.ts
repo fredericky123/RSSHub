@@ -38,7 +38,7 @@ export const processContent = (html: string): string => {
     while (changed) {
         changed = false;
         $('*').each((_, el) => {
-            if (!(el.type === 'tag' && !ALLOWED_TAGS.has(el.name))) {
+            if (el.type !== 'tag' || ALLOWED_TAGS.has(el.name)) {
                 return;
             }
 
@@ -67,5 +67,5 @@ export const processContent = (html: string): string => {
         .filter((_, el) => !$(el).html()?.trim())
         .remove();
 
-    return $.html() || '';
+    return $.html();
 };

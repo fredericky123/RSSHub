@@ -6,13 +6,15 @@ import playwright from '@/utils/playwright';
 
 export const route: Route = {
     path: '/',
+    categories: ['other'],
+    example: '/uraaka-joshi',
     radar: [
         {
             source: ['uraaka-joshi.com/'],
             target: '',
         },
     ],
-    name: 'Unknown',
+    name: 'Homepage',
     maintainers: ['SettingDust', 'Halcao'],
     handler,
     url: 'uraaka-joshi.com/',
@@ -53,7 +55,7 @@ async function handler() {
         await page.waitForSelector('#main-block .grid-cell');
 
         const bodyHandle = await page.$('body');
-        html = await page.evaluate((body) => body.innerHTML, bodyHandle);
+        html = await page.evaluate((body) => body.getHTML(), bodyHandle);
     } catch {
         throw new Error('Access denied (403)');
     }

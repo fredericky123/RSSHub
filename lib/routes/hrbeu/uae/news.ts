@@ -25,7 +25,7 @@ export const route: Route = {
         },
     ],
     name: '水声工程学院',
-    maintainers: [],
+    maintainers: ['Derekmini'],
     handler,
     description: `| 新闻动态 | 通知公告 | 科学研究 / 科研动态 |
 | :------: | :------: | :-----------------: |
@@ -37,11 +37,7 @@ async function handler(ctx) {
     const host = 'http://uae.hrbeu.edu.cn';
     const url = `${host}/${id}.htm`;
 
-    const response = await got(url, {
-        headers: {
-            Referer: host,
-        },
-    });
+    const response = await got(url);
 
     const $ = load(response.data);
     const title = $('h2').text();
