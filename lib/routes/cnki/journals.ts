@@ -10,9 +10,19 @@ import parser from '@/utils/rss-parser';
 import { ProcessItem } from './utils';
 
 // navi/rss.cnki.net only answer to mainland China IPs; oversea.cnki.net serves
-// the same journal via a different markup and link scheme.
+// the same journal through POST endpoints with a different markup.
 const DOMESTIC_ROOT = 'https://navi.cnki.net';
 const OVERSEA_ROOT = 'https://oversea.cnki.net';
+const OVERSEA_QS = 'language=CHS&uniplatform=OVERSEA';
+const PCODE = encodeURIComponent('CJFD,CCJD');
+
+const OVERSEA_HEADERS = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'X-Requested-With': 'XMLHttpRequest',
+    Referer: `${OVERSEA_ROOT}/`,
+    language: 'CHS',
+    uniplatform: 'OVERSEA',
+};
 
 export const route: Route = {
     path: '/journals/:name',
@@ -45,24 +55,73 @@ export const route: Route = {
 | --- | --- |
 | 自动 | \`/cnki/journals/GLSJ\` |
 | 强制境外（境外服务器建议，跳过探测更快） | \`/cnki/journals/GLSJ?host=oversea\` |
-| 强制境内 | \`/cnki/journals/GLSJ?host=domestic\` |
-
-境外站点的作者、页码直接来自目录页，无需逐篇抓取，因此响应很快。`,
+| 强制境内 | \`/cnki/journals/GLSJ?host=domestic\` |`,
     handler,
 };
 
 // ---------- oversea ----------
 
+async function overseaPost(url: string, body: string) {
+    try {
+        const res = await got.post(url, { headers: OVERSEA_HEADERS, body });
+        return res.data;
+    } catch (error) {
+        logger.error(`cnki: POST ${url} failed - ${(error as Error).message}`);
+        const res = await got.get(url, { headers: OVERSEA_HEADERS });
+        return res.data;
+    }
+}
+
+// Both tokens are freshly encrypted per session (the same issue yields a
+// different yearIssue on every page load), so they must be read at runtime.
+// They are long [A-Za-z0-9_-] strings, which makes them easy to spot.
+function longTokens(html: string, minLen: number) {
+    return html.match(new RegExp(`[A-Za-z0-9_-]{${minLen},}`, 'g')) || [];
+}
+
+// The detail page hands its scripts a "time" token used by yearList.
+function extractTimeToken(html: string) {
+    const keyed = html.match(/["']?time["']?\s*[:=]\s*["']([\w-]{40,})["']/)?.[1] || html.match(/time=([\w-]{40,})/)?.[1];
+    if (keyed) {
+        return keyed;
+    }
+    // Fall back to the longest ~90-char token on the page.
+    return longTokens(html, 80).sort((a, b) => b.length - a.length)[0] || '';
+}
+
+async function overseaIssueToken(name: string, detailHtml: string) {
+    const timeToken = extractTimeToken(detailHtml);
+    const body = `pIdx=0${timeToken ? `&time=${encodeURIComponent(timeToken)}` : ''}&isEpublish=0&pcode=${PCODE}`;
+
+    const html = await overseaPost(`${OVERSEA_ROOT}/knavi/journals/${name}/yearList?${OVERSEA_QS}`, body);
+    const $ = load(html);
+
+    // Newest issue first: prefer an explicit value attribute, then a
+    // yearIssue= parameter, then the first long token in the fragment
+    // (issue links pass it as an inline onclick argument).
+    const byValue = $('[value]')
+        .toArray()
+        .map((el) => $(el).attr('value'))
+        .find((v) => v && v.length > 60);
+    if (byValue) {
+        return byValue;
+    }
+
+    return html.match(/yearIssue=([\w-]{60,})/)?.[1] || longTokens(html, 100)[0] || '';
+}
+
 async function fetchOversea(name: string, limit: number) {
     const journalUrl = `${OVERSEA_ROOT}/knavi/journals/${name}/detail?language=CHS`;
-    const titleRes = await got.get(journalUrl);
-    const title = load(titleRes.data)('head > title').text().trim();
+    const detailHtml = (await got.get(journalUrl)).data;
+    const title = load(detailHtml)('head > title').text().trim();
 
-    // Without yearIssue the endpoint returns the latest issue, which is what a
-    // feed wants (the oversea yearIssue value is an opaque encrypted token).
-    const papersUrl = `${OVERSEA_ROOT}/knavi/journals/${name}/papers?pageIdx=0&pcode=CJFD,CCJD&isEpublish=0&language=CHS&uniplatform=OVERSEA`;
-    const papersRes = await got.get(papersUrl);
-    const $ = load(papersRes.data);
+    const token = await overseaIssueToken(name, detailHtml);
+    if (!token) {
+        throw new Error('cnki: cannot read issue token from oversea');
+    }
+
+    const papersUrl = `${OVERSEA_ROOT}/knavi/journals/${name}/papers?yearIssue=${token}&pageIdx=0&pcode=${PCODE}&isEpublish=0&${OVERSEA_QS}`;
+    const $ = load(await overseaPost(papersUrl, ''));
 
     const items = $('dd')
         .toArray()
@@ -81,7 +140,6 @@ async function fetchOversea(name: string, limit: number) {
 
             const author = ($el.find('span.author').attr('title') || $el.find('span.author').text()).replace(/;$/, '').replaceAll(';', ', ').trim();
             const pages = ($el.find('span.company').attr('title') || $el.find('span.company').text()).trim();
-            // Section heading (重大选题征文 / 经济学 / 工商管理 ...)
             const section = $el.parent().find('dt.tit').first().text().trim();
 
             return {
@@ -166,7 +224,6 @@ async function handler(ctx) {
         return await fetchOversea(name, limit);
     }
 
-    // The native CNKI feed is mainland-only.
     try {
         const rssUrl = `https://rss.cnki.net/kns/rss.aspx?Journal=${name}&Virtual=knavi`;
         const rssResponse = await got.get(rssUrl);
