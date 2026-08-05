@@ -55,26 +55,55 @@ async function handler(ctx) {
         // Read the newest issue token from the rendered DOM, then request the
         // paper list from inside the page so session, cookies and the encrypted
         // context all match what the site itself sends.
-        papersHtml = await page.evaluate(async (journalName) => {
+        const result = await page.evaluate(async (journalName) => {
             const html = document.documentElement.innerHTML;
 
-            const token =
-                html.match(/yearIssue=([\w-]{60,})/)?.[1] ||
-                html.match(/GetIssue\(\s*['"]([\w-]{60,})['"]/)?.[1] ||
-                [...document.querySelectorAll('[value]')].map((el) => el.getAttribute('value') || '').find((v) => v.length > 60) ||
-                '';
-
-            if (!token) {
-                return '';
+            // Collect every plausible issue token, newest first.
+            const found = new Set<string>();
+            for (const m of html.matchAll(/yearIssue=([\w-]{60,})/g)) {
+                found.add(m[1]);
+            }
+            for (const m of html.matchAll(/GetIssue\(\s*['"]([\w-]{60,})['"]/g)) {
+                found.add(m[1]);
+            }
+            for (const el of document.querySelectorAll('[value]')) {
+                const v = el.getAttribute('value') || '';
+                if (v.length > 60) {
+                    found.add(v);
+                }
+            }
+            // Last resort: any long token family on the page.
+            if (found.size === 0) {
+                const all = html.match(/[A-Za-z0-9_-]{100,200}/g) || [];
+                const groups = new Map();
+                for (const t of all) {
+                    const k = t.slice(0, 40);
+                    groups.set(k, [...(groups.get(k) || []), t]);
+                }
+                const best = [...groups.values()].sort((a, b) => b.length - a.length)[0] || [];
+                for (const t of best.slice(0, 5)) {
+                    found.add(t);
+                }
             }
 
-            const url = `/knavi/journals/${journalName}/papers?yearIssue=${token}&pageIdx=0&pcode=CJFD,CCJD&isEpublish=0&language=CHS&uniplatform=OVERSEA`;
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            });
-            return await res.text();
+            const tokens = [...found];
+            const tried = [];
+
+            for (const token of tokens.slice(0, 5)) {
+                const url = `/knavi/journals/${journalName}/papers?yearIssue=${token}&pageIdx=0&pcode=CJFD,CCJD&isEpublish=0&language=CHS&uniplatform=OVERSEA`;
+                const res = await fetch(url, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                const text = await res.text();
+                tried.push(`${token.slice(0, 10)}:${res.status}:${text.length}`);
+                if (text.includes('span class="name"') || text.length > 5000) {
+                    return { html: text, tokens: tokens.length, tried, htmlLen: html.length };
+                }
+            }
+
+            return { html: '', tokens: tokens.length, tried, htmlLen: html.length };
         }, name);
+
+        logger.error(`cnki: rendered=${result.htmlLen} bytes, tokens=${result.tokens}, tried=[${result.tried.join(' | ')}]`);
+        papersHtml = result.html;
     } finally {
         await destroy();
     }
