@@ -72,58 +72,28 @@ async function overseaPost(url: string, body: string) {
     }
 }
 
-// Both tokens are freshly encrypted per session (the same issue yields a
-// different yearIssue on every page load), so they must be read at runtime.
-// They are long [A-Za-z0-9_-] strings, which makes them easy to spot.
-function longTokens(html: string, minLen: number) {
-    return html.match(new RegExp(`[A-Za-z0-9_-]{${minLen},}`, 'g')) || [];
-}
+// The oversea site encrypts its yearIssue token per session, but every issue
+// of a journal shares a long common prefix, and the tokens are all embedded in
+// the detail page. Group the page's long strings by prefix: the biggest group
+// is the issue-token family (base64 font blobs never share a 40-char prefix).
+function issueTokenCandidates(html: string) {
+    const all = [...new Set(html.match(/[A-Za-z0-9_-]{100,200}/g) || [])];
 
-// The detail page hands its scripts a "time" token used by yearList.
-function extractTimeToken(html: string) {
-    const keyed = html.match(/["']?time["']?\s*[:=]\s*["']([\w-]{40,})["']/)?.[1] || html.match(/time=([\w-]{40,})/)?.[1];
-    if (keyed) {
-        return keyed;
+    const groups = new Map<string, string[]>();
+    for (const token of all) {
+        const key = token.slice(0, 40);
+        groups.set(key, [...(groups.get(key) || []), token]);
     }
-    // Fall back to the longest ~90-char token on the page.
-    return longTokens(html, 80).sort((a, b) => b.length - a.length)[0] || '';
+
+    const best = [...groups.values()].sort((a, b) => b.length - a.length)[0] || [];
+    // Fall back to every long string if no family stands out.
+    return (best.length > 1 ? best : all).slice(0, 6);
 }
 
-async function overseaIssueToken(name: string, detailHtml: string) {
-    const timeToken = extractTimeToken(detailHtml);
-    const body = `pIdx=0${timeToken ? `&time=${encodeURIComponent(timeToken)}` : ''}&isEpublish=0&pcode=${PCODE}`;
-
-    const html = await overseaPost(`${OVERSEA_ROOT}/knavi/journals/${name}/yearList?${OVERSEA_QS}`, body);
+function parsePapers(html: string, limit: number) {
     const $ = load(html);
 
-    // Newest issue first: prefer an explicit value attribute, then a
-    // yearIssue= parameter, then the first long token in the fragment
-    // (issue links pass it as an inline onclick argument).
-    const byValue = $('[value]')
-        .toArray()
-        .map((el) => $(el).attr('value'))
-        .find((v) => v && v.length > 60);
-    if (byValue) {
-        return byValue;
-    }
-
-    return html.match(/yearIssue=([\w-]{60,})/)?.[1] || longTokens(html, 100)[0] || '';
-}
-
-async function fetchOversea(name: string, limit: number) {
-    const journalUrl = `${OVERSEA_ROOT}/knavi/journals/${name}/detail?language=CHS`;
-    const detailHtml = (await got.get(journalUrl)).data;
-    const title = load(detailHtml)('head > title').text().trim();
-
-    const token = await overseaIssueToken(name, detailHtml);
-    if (!token) {
-        throw new Error('cnki: cannot read issue token from oversea');
-    }
-
-    const papersUrl = `${OVERSEA_ROOT}/knavi/journals/${name}/papers?yearIssue=${token}&pageIdx=0&pcode=${PCODE}&isEpublish=0&${OVERSEA_QS}`;
-    const $ = load(await overseaPost(papersUrl, ''));
-
-    const items = $('dd')
+    return $('dd')
         .toArray()
         .map((el) => {
             const $el = $(el);
@@ -134,13 +104,13 @@ async function fetchOversea(name: string, limit: number) {
                 return null;
             }
 
-            // e.g. GLSJ202607002 -> issue 2026-07
+            // e.g. GLSJ202607001 -> issue 2026-07
             const fileId = $el.find('b[name="encrypt"]').attr('id') || '';
             const ym = fileId.match(/[A-Z]+(\d{4})(\d{2})/i);
 
             const author = ($el.find('span.author').attr('title') || $el.find('span.author').text()).replace(/;$/, '').replaceAll(';', ', ').trim();
             const pages = ($el.find('span.company').attr('title') || $el.find('span.company').text()).trim();
-            const section = $el.parent().find('dt.tit').first().text().trim();
+            const section = $el.closest('div').find('dt.tit').first().text().trim();
 
             return {
                 title: itemTitle,
@@ -153,16 +123,31 @@ async function fetchOversea(name: string, limit: number) {
         })
         .filter(Boolean)
         .slice(0, limit);
+}
 
-    if (items.length === 0) {
-        throw new Error('cnki: no papers parsed from oversea');
+async function fetchOversea(name: string, limit: number) {
+    const journalUrl = `${OVERSEA_ROOT}/knavi/journals/${name}/detail?language=CHS`;
+    const detailHtml = (await got.get(journalUrl, { headers: OVERSEA_HEADERS })).data;
+    const title = load(detailHtml)('head > title').text().trim();
+
+    // Try the candidate tokens in document order; the newest issue comes first.
+    for (const token of issueTokenCandidates(detailHtml)) {
+        const papersUrl = `${OVERSEA_ROOT}/knavi/journals/${name}/papers?yearIssue=${token}&pageIdx=0&pcode=${PCODE}&isEpublish=0&${OVERSEA_QS}`;
+        try {
+            const items = parsePapers(await overseaPost(papersUrl, ''), limit);
+            if (items.length > 0) {
+                return {
+                    title: title || `CNKI - ${name}`,
+                    link: journalUrl,
+                    item: items,
+                };
+            }
+        } catch (error) {
+            logger.error(`cnki: oversea token attempt failed - ${(error as Error).message}`);
+        }
     }
 
-    return {
-        title: title || `CNKI - ${name}`,
-        link: journalUrl,
-        item: items,
-    };
+    throw new Error('cnki: no papers parsed from oversea');
 }
 
 // ---------- domestic ----------
