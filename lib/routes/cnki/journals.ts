@@ -61,13 +61,14 @@ export const route: Route = {
 
 // ---------- oversea ----------
 
-async function overseaPost(url: string, body: string) {
+async function overseaPost(url: string, body: string, extra: Record<string, string> = {}) {
+    const headers = { ...OVERSEA_HEADERS, ...extra };
     try {
-        const res = await got.post(url, { headers: OVERSEA_HEADERS, body });
+        const res = await got.post(url, { headers, body });
         return res.data;
     } catch (error) {
         logger.error(`cnki: POST ${url} failed - ${(error as Error).message}`);
-        const res = await got.get(url, { headers: OVERSEA_HEADERS });
+        const res = await got.get(url, { headers });
         return res.data;
     }
 }
@@ -87,7 +88,7 @@ function issueTokenCandidates(html: string) {
 
     const best = [...groups.values()].sort((a, b) => b.length - a.length)[0] || [];
     // Fall back to every long string if no family stands out.
-    return (best.length > 1 ? best : all).slice(0, 6);
+    return (best.length > 1 ? best : all).slice(0, 8);
 }
 
 function parsePapers(html: string, limit: number) {
@@ -127,14 +128,26 @@ function parsePapers(html: string, limit: number) {
 
 async function fetchOversea(name: string, limit: number) {
     const journalUrl = `${OVERSEA_ROOT}/knavi/journals/${name}/detail?language=CHS`;
-    const detailHtml = (await got.get(journalUrl, { headers: OVERSEA_HEADERS })).data;
+    const detailRes = await got.get(journalUrl, { headers: OVERSEA_HEADERS });
+    const detailHtml = detailRes.data;
     const title = load(detailHtml)('head > title').text().trim();
 
+    // The issue tokens are encrypted per session, so papers only accepts them
+    // when sent back with the cookies the detail page just issued.
+    const setCookie = detailRes.headers?.['set-cookie'];
+    const cookie = Array.isArray(setCookie) ? setCookie.map((c) => c.split(';')[0]).join('; ') : '';
+    const session = { ...(cookie ? { Cookie: cookie } : {}), Referer: journalUrl };
+
+    const candidates = issueTokenCandidates(detailHtml);
+    logger.error(`cnki: oversea candidates=${candidates.length} cookie=${cookie ? 'yes' : 'no'}`);
+
     // Try the candidate tokens in document order; the newest issue comes first.
-    for (const token of issueTokenCandidates(detailHtml)) {
+    for (const token of candidates) {
         const papersUrl = `${OVERSEA_ROOT}/knavi/journals/${name}/papers?yearIssue=${token}&pageIdx=0&pcode=${PCODE}&isEpublish=0&${OVERSEA_QS}`;
         try {
-            const items = parsePapers(await overseaPost(papersUrl, ''), limit);
+            const html = await overseaPost(papersUrl, '', session);
+            logger.error(`cnki: token ${token.slice(0, 12)}... -> ${html?.length ?? 0} bytes`);
+            const items = parsePapers(html, limit);
             if (items.length > 0) {
                 return {
                     title: title || `CNKI - ${name}`,
