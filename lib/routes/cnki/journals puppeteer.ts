@@ -3,7 +3,7 @@ import { load } from 'cheerio';
 import type { Route } from '@/types';
 import logger from '@/utils/logger';
 import { parseDate } from '@/utils/parse-date';
-import puppeteer from '@/utils/puppeteer';
+import { getPlaywrightPage } from '@/utils/playwright';
 
 const OVERSEA_ROOT = 'https://oversea.cnki.net';
 
@@ -22,12 +22,12 @@ export const route: Route = {
         supportPodcast: false,
         supportScihub: false,
     },
-    name: '期刊（境外站，需 Puppeteer）',
+    name: '期刊（境外站，需浏览器渲染）',
     maintainers: ['fredericky123'],
     url: 'oversea.cnki.net',
-    description: `境外站 \`oversea.cnki.net\` 的期次 token 由页面 JS 运行时加密生成，纯 HTTP 抓取无法获得，因此本路由使用 Puppeteer 渲染页面后再取数据。
+    description: `境外站 \`oversea.cnki.net\` 的期次 token 由页面 JS 运行时加密生成，纯 HTTP 抓取无法获得，因此本路由渲染页面后再取数据。
 
-**需要常驻实例**（VPS / Railway / Docker），Vercel 等 Serverless 环境通常因体积与冷启动限制无法运行。境内服务器请改用 \`/cnki/journals/:name\`。`,
+**需要常驻实例**（VPS / Railway / Docker），Serverless 环境通常因体积与冷启动限制无法运行。境内服务器请改用 \`/cnki/journals/:name\`。`,
     handler,
 };
 
@@ -36,72 +36,47 @@ async function handler(ctx) {
     const limit = ctx.req.query('limit') ? Number.parseInt(ctx.req.query('limit')) : 30;
     const journalUrl = `${OVERSEA_ROOT}/knavi/journals/${name}/detail?language=CHS`;
 
-    const browser = await puppeteer();
+    logger.http(`Requesting ${journalUrl}`);
+    const { page, destroy } = await getPlaywrightPage(journalUrl, {
+        gotoConfig: { waitUntil: 'networkidle', timeout: 60000 },
+    });
+
     let papersHtml = '';
     let title = '';
 
     try {
-        const page = await browser.newPage();
-
-        // Block heavy assets: we only need the DOM and the XHR responses.
-        await page.setRequestInterception(true);
-        page.on('request', (request) => {
-            const type = request.resourceType();
-            if (type === 'image' || type === 'font' || type === 'media' || type === 'stylesheet') {
-                request.abort();
-            } else {
-                request.continue();
-            }
-        });
-
-        logger.http(`Requesting ${journalUrl}`);
-        await page.goto(journalUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-
         title = await page.title();
 
-        // The issue list is injected by JS; wait for an issue token to appear.
-        await page.waitForFunction(() => /yearIssue=[\w-]{60,}|GetIssue\(['"][\w-]{60,}/.test(document.documentElement.innerHTML) || document.querySelectorAll('dl.yearissuepage a, .yearissuepage a, a[id^="yq"]').length > 0, { timeout: 30000 }).catch(() => logger.error('cnki: issue list did not appear in time'));
+        // The issue list is injected by JS; wait until a token shows up.
+        await page
+            .waitForFunction(() => /yearIssue=[\w-]{60,}|GetIssue\(['"][\w-]{60,}/.test(document.documentElement.innerHTML) || [...document.querySelectorAll('[value]')].some((el) => (el.getAttribute('value') || '').length > 60), { timeout: 30000 })
+            .catch(() => logger.error('cnki: issue list did not appear in time'));
 
-        // Pull the newest issue token straight out of the rendered DOM, then
-        // fetch the paper list from inside the page so the session, cookies and
-        // encrypted context all match what the site itself would send.
-        papersHtml = await page.evaluate(async (pcode) => {
+        // Read the newest issue token from the rendered DOM, then request the
+        // paper list from inside the page so session, cookies and the encrypted
+        // context all match what the site itself sends.
+        papersHtml = await page.evaluate(async (journalName) => {
             const html = document.documentElement.innerHTML;
 
-            const grab = () => {
-                const direct = html.match(/yearIssue=([\w-]{60,})/)?.[1];
-                if (direct) {
-                    return direct;
-                }
-                const called = html.match(/GetIssue\(\s*['"]([\w-]{60,})['"]/)?.[1];
-                if (called) {
-                    return called;
-                }
-                for (const el of document.querySelectorAll('[value]')) {
-                    const v = el.getAttribute('value') || '';
-                    if (v.length > 60) {
-                        return v;
-                    }
-                }
-                return '';
-            };
+            const token =
+                html.match(/yearIssue=([\w-]{60,})/)?.[1] ||
+                html.match(/GetIssue\(\s*['"]([\w-]{60,})['"]/)?.[1] ||
+                [...document.querySelectorAll('[value]')].map((el) => el.getAttribute('value') || '').find((v) => v.length > 60) ||
+                '';
 
-            const token = grab();
             if (!token) {
                 return '';
             }
 
-            const url = `/knavi/journals/${location.pathname.split('/')[3]}/papers?yearIssue=${token}&pageIdx=0&pcode=${pcode}&isEpublish=0&language=CHS&uniplatform=OVERSEA`;
+            const url = `/knavi/journals/${journalName}/papers?yearIssue=${token}&pageIdx=0&pcode=CJFD,CCJD&isEpublish=0&language=CHS&uniplatform=OVERSEA`;
             const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'X-Requested-With': 'XMLHttpRequest' },
             });
             return await res.text();
-        }, 'CJFD,CCJD');
-
-        await page.close();
+        }, name);
     } finally {
-        browser.close();
+        await destroy();
     }
 
     if (!papersHtml) {
